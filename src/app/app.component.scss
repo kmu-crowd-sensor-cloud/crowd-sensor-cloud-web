@@ -1,0 +1,16 @@
+// 메뉴
+.spacer {
+  flex: 1 1 auto;
+}
+
+// 지도 부분
+.map-container {
+  width: 100%;
+  height: calc(100% - 64px);
+  position: relative;
+
+  .map {
+    width: 100%;
+    min-height: 100%;
+  }
+}

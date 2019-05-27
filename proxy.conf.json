@@ -1,0 +1,17 @@
+{
+  "/air": {
+    "target": "http://athome.cs.kookmin.ac.kr",
+    "secure": false,
+    "changeOrigin": true
+  },
+  "/air.html": {
+    "target": "http://athome.cs.kookmin.ac.kr",
+    "secure": false,
+    "changeOrigin": true
+  },
+  "/device": {
+    "target": "http://athome.cs.kookmin.ac.kr",
+    "secure": false,
+    "changeOrigin": true
+  }
+}
