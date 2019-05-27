@@ -123,10 +123,8 @@ export class AppComponent implements OnInit, AfterViewInit {
   onAddMarker(item: Device) {
     const chartElement = document.createElement('div');
     chartElement.style.width = '100%';
-    chartElement.style.maxWidth = '340px';
-    chartElement.style.minWidth = '340px';
-    chartElement.style.minHeight = '320px';
-    chartElement.style.maxHeight = '320px';
+    chartElement.style.minWidth = '300px';
+    chartElement.style.minHeight = '300px';
     item.marker = L.marker([item.lat, item.long]).addTo(this.map).bindPopup(chartElement);
     item.marker.on('popupopen', (e) => this.onShowChart({
       source: e,
@@ -138,7 +136,6 @@ export class AppComponent implements OnInit, AfterViewInit {
     const chart = event.target.chart = Highcharts.chart(container, {
       chart: {
         type: 'spline',
-        width: 300,
         scrollablePlotArea: {
           minWidth: 300,
         },
