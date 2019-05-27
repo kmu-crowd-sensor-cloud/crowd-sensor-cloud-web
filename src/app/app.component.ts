@@ -19,6 +19,8 @@ interface Device {
   histories?: Device[];
   marker?: L.Marker;
   chart?: Highcharts.Chart;
+
+  [name: string]: any;
 }
 
 interface DeviceMap {
@@ -45,8 +47,13 @@ export class AppComponent implements OnInit, AfterViewInit {
 
   bounds = new BehaviorSubject<L.LatLngBounds>(undefined);
   devices = {};
+  iotMarker: L.icon;
 
   constructor(private http: HttpClient) {
+    this.iotMarker = L.icon({
+      iconUrl: './assets/icons8-iot-sensor-50.png',
+      iconSize: [25, 25],
+    });
   }
 
   ngOnInit(): void {
@@ -110,8 +117,8 @@ export class AppComponent implements OnInit, AfterViewInit {
 
   onLocationFound(event) {
     const radius = event.accuracy / 2;
-    L.marker(event.latlng).addTo(this.map)
-      .bindPopup('이 곳에서' + radius + ' 미터 이내에 있습니다.').openPopup();
+    // L.marker(event.latlng).addTo(this.map)
+    //   .bindPopup('이 곳에서' + radius + ' 미터 이내에 있습니다.').openPopup();
     L.circle(event.latlng, radius).addTo(this.map);
     this.map.setView(event.latlng, 15);
   }
@@ -125,6 +132,8 @@ export class AppComponent implements OnInit, AfterViewInit {
     chartElement.style.width = '100%';
     chartElement.style.minWidth = '300px';
     chartElement.style.minHeight = '300px';
+    chartElement.style.maxWidth = '300px';
+    chartElement.style.maxHeight = '300px';
     item.marker = L.marker([item.lat, item.long]).addTo(this.map).bindPopup(chartElement);
     item.marker.on('popupopen', (e) => this.onShowChart({
       source: e,
@@ -140,7 +149,12 @@ export class AppComponent implements OnInit, AfterViewInit {
           minWidth: 300,
         },
         events: {
-          load: () => of(undefined).pipe(delay(10), tap(() => this.onLoadSensorData(chart, event.target))).subscribe()
+          load: () => of(undefined).pipe(
+            delay(10),
+            tap(() => event.target.basetime = Math.floor((new Date().getTime() - 150 * 60 * 1000) / (60 * 60 * 1000)) * 60 * 60 * 1000),
+            tap(() => event.target.endtime = undefined),
+            tap(() => this.onLoadSensorData(chart, event.target))
+          ).subscribe()
         }
       },
 
@@ -149,7 +163,7 @@ export class AppComponent implements OnInit, AfterViewInit {
       },
 
       subtitle: {
-        text: '최근 500개의 측정자료'
+        text: '최근 3시간의 측정자료'
       },
 
       xAxis: {
@@ -160,7 +174,7 @@ export class AppComponent implements OnInit, AfterViewInit {
       },
       yAxis: [{ // left y axis
         title: {
-          text: '온도'
+          text: ''
         },
         labels: {
           format: '{value:.,0f}°C',
@@ -169,7 +183,7 @@ export class AppComponent implements OnInit, AfterViewInit {
       }, {
         gridLineWidth: 0,
         title: {
-          text: '습도'
+          text: ''
         },
         labels: {
           format: '{value:.,0f}%',
@@ -179,7 +193,7 @@ export class AppComponent implements OnInit, AfterViewInit {
         gridLineWidth: 0,
         opposite: true,
         title: {
-          text: 'PM 10'
+          text: ''
         },
         labels: {
           format: '{value:.,0f}㎍/m³',
@@ -189,7 +203,7 @@ export class AppComponent implements OnInit, AfterViewInit {
         gridLineWidth: 0,
         opposite: true,
         title: {
-          text: 'PM 2.5'
+          text: ''
         },
         labels: {
           format: '{value:.,0f}㎍/m³',
@@ -245,7 +259,7 @@ export class AppComponent implements OnInit, AfterViewInit {
         },
         data: []
       }, {
-        name: 'PM 25',
+        name: 'PM 2.5',
         type: 'spline',
         yAxis: 3,
         tooltip: {
@@ -254,17 +268,32 @@ export class AppComponent implements OnInit, AfterViewInit {
         data: []
       }]
     });
+    chart.renderer.button('이전', 10, 30, () => {
+      const device: Device = event.target;
+      device.endtime = device.basetime;
+      device.basetime = device.basetime - 3 * 60 * 60 * 1000;
+      const hours = Math.round((new Date().getTime() - device.basetime) / 3600000);
+      this.onLoadSensorData(chart, event.target);
+      chart.setSubtitle({
+        text: `${hours}시간 전 측정자료`
+      });
+    }, null).add();
   }
 
   onLoadSensorData(chart: Highcharts.Chart, target: Device) {
-    const param = new HttpParams().set(
+    let param = new HttpParams().set(
       'device', target.device,
+    ).set(
+      'start', `${target.basetime}`
     ).set(
       'count', '500'
     ).set(
       // 5분 단위로 캐쉬하도록 계산
       't', `${Math.floor(new Date().getTime() / (5 * 60 * 1000)) * 5 * 60 * 1000}`
     );
+    if (target.endtime) {
+      param = param.set('end', `${target.endtime}`);
+    }
     this.http.get('/air', {
       params: param,
       headers: {
@@ -284,6 +313,14 @@ export class AppComponent implements OnInit, AfterViewInit {
         toArray(),
         tap(data => chart.series[group.key].setData(data)),
       )),
+      catchError(() => {
+        const label = chart.renderer.label('데이터 없음', 120, 130);
+        return of(label).pipe(
+          tap(item => item.add()),
+          delay(2000),
+          tap(item => item.destroy()),
+        );
+      }),
     ).subscribe();
   }
 }
