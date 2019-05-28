@@ -1,7 +1,7 @@
 import {AfterViewInit, Component, ElementRef, OnInit, ViewChild} from '@angular/core';
 import {HttpClient, HttpErrorResponse, HttpParams} from '@angular/common/http';
-import {BehaviorSubject, of} from 'rxjs';
-import {catchError, delay, filter, flatMap, groupBy, map, mergeMap, switchMap, tap, toArray} from 'rxjs/operators';
+import {BehaviorSubject, merge, of} from 'rxjs';
+import {catchError, delay, filter, flatMap, groupBy, map, mapTo, mergeMap, switchMap, tap, toArray} from 'rxjs/operators';
 import * as L from 'leaflet';
 import * as Highcharts from 'highcharts';
 
@@ -149,11 +149,21 @@ export class AppComponent implements OnInit, AfterViewInit {
           minWidth: 300,
         },
         events: {
-          load: () => of(undefined).pipe(
+          load: () => of(event.target).pipe(
             delay(10),
-            tap(() => event.target.basetime = Math.floor((new Date().getTime() - 150 * 60 * 1000) / (60 * 60 * 1000)) * 60 * 60 * 1000),
-            tap(() => event.target.endtime = undefined),
-            tap(() => this.onLoadSensorData(chart, event.target))
+            tap((target) => target.basetime = Math.floor((new Date().getTime() - 150 * 60 * 1000) / (60 * 60 * 1000)) * 60 * 60 * 1000),
+            tap((target) => target.endtime = undefined),
+            flatMap((target) => this.onLoadSensorData(chart, target))
+          ).subscribe(),
+          redraw: () => of(event.target).pipe(
+            flatMap((target) => merge(
+              of(target.next).pipe(
+                filter((el) => !!el),
+                tap((el: Highcharts.SVGElement) => el.translate(chart.renderer.box.clientWidth - 50, 35))
+              ),
+              of(target.previous).pipe(filter((el) => !!el))
+              )
+            )
           ).subscribe()
         }
       },
@@ -266,18 +276,46 @@ export class AppComponent implements OnInit, AfterViewInit {
           valueSuffix: '㎍/m³',
         },
         data: []
-      }]
+      }],
     });
-    chart.renderer.button('이전', 10, 30, () => {
+    event.target.next = chart.renderer.button('다음', chart.renderer.box.clientWidth - 50, 35, () => {
+      const device: Device = event.target;
+      device.basetime = device.endtime;
+      device.endtime = device.endtime + 3 * 60 * 60 * 1000;
+      const hours = Math.round((new Date().getTime() - device.basetime) / 3600000);
+      const futures = Math.round((new Date().getTime() - device.endtime) / 3600000);
+      device.next.hide();
+      this.onLoadSensorData(chart, event.target).pipe(
+        filter(() => futures > 3),
+        tap(() => device.next.show()),
+      ).subscribe();
+      if (hours > 3) {
+        chart.setSubtitle({
+          text: `${hours}시간 전 측정자료`
+        });
+      } else {
+        chart.setSubtitle({
+          text: `최근 3시간의 측정자료`
+        });
+      }
+    });
+    event.target.next.hide();
+    event.target.next.add();
+    event.target.previous = chart.renderer.button('이전', 10, 35, () => {
       const device: Device = event.target;
       device.endtime = device.basetime;
       device.basetime = device.basetime - 3 * 60 * 60 * 1000;
       const hours = Math.round((new Date().getTime() - device.basetime) / 3600000);
-      this.onLoadSensorData(chart, event.target);
+      device.previous.hide();
+      this.onLoadSensorData(chart, event.target).pipe(
+        tap(() => device.previous.show()),
+        tap(() => device.next.show()),
+      ).subscribe();
       chart.setSubtitle({
         text: `${hours}시간 전 측정자료`
       });
-    }, null).add();
+    }, null);
+    event.target.previous.add();
   }
 
   onLoadSensorData(chart: Highcharts.Chart, target: Device) {
@@ -294,7 +332,11 @@ export class AppComponent implements OnInit, AfterViewInit {
     if (target.endtime) {
       param = param.set('end', `${target.endtime}`);
     }
-    this.http.get('/air', {
+    if (target.label) {
+      target.label.destroy();
+      target.label = undefined;
+    }
+    return this.http.get('/air', {
       params: param,
       headers: {
         'x-api-key': environment.x_api_key
@@ -314,13 +356,13 @@ export class AppComponent implements OnInit, AfterViewInit {
         tap(data => chart.series[group.key].setData(data)),
       )),
       catchError(() => {
-        const label = chart.renderer.label('데이터 없음', 120, 130);
-        return of(label).pipe(
+        target.label = chart.renderer.label('데이터 없음', 120, 130);
+        return of(target.label).pipe(
+          delay(10),
           tap(item => item.add()),
-          delay(2000),
-          tap(item => item.destroy()),
+          mapTo(undefined)
         );
       }),
-    ).subscribe();
+    );
   }
 }
